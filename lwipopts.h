@@ -149,3 +149,50 @@ void ch32h4_sntp_set_time(uint32_t sec, uint32_t us);
  * is a xorshift32 seeded from the timebase -- NOT the hardware RNG, which is
  * the mbedTLS entropy source and must not be a hard dependency of DNS. */
 #define LWIP_RAND()  ch32h4_lwip_rand()
+
+/* ---- mDNS ---------------------------------------------------------------
+ *
+ * The responder, so the board answers to a name -- <hostname>.local -- and
+ * advertises what it offers. That is how the Arduino IDE finds a board to
+ * upload to over the network, and how anything else finds it without being
+ * told an address that DHCP may change tomorrow.
+ *
+ * It needs IGMP, which is already on above: mDNS is multicast, and without a
+ * group join the queries never arrive. mdns.c #errors rather than silently not
+ * working, which is the right way round.
+ *
+ * MDNS_MAX_SERVICES is 2 rather than the default 1: OTA advertises _arduino
+ * and a sketch will want one of its own. Each costs a little RAM per netif and
+ * pushes the output packet from 512 to 1450 bytes, which is why it is not
+ * larger.
+ *
+ * LWIP_NUM_NETIF_CLIENT_DATA is where mdns hangs its per-interface state.
+ * Without it mdns_resp_add_netif() has nowhere to put anything and fails at
+ * run time, having compiled perfectly. */
+#define LWIP_MDNS_RESPONDER         1
+#define MDNS_MAX_SERVICES           2
+#define LWIP_NUM_NETIF_CLIENT_DATA  1
+
+/* ---- Memory corruption detectors ----------------------------------------
+ *
+ * Off by default; -DCH32H4_LWIP_ASSERT_CONSOLE turns them on together with the
+ * assert output in arch/cc.h.
+ *
+ * These exist because of a fault that only appeared at certain code layouts:
+ * memp_free() indexing memp_pools[] thousands of entries out of range, so the
+ * read landed in unprogrammed flash and returned the erased pattern. A wild
+ * index that comes and goes with an unrelated codegen flag is memory
+ * corruption somewhere upstream, and a symptom that hides when you look at it
+ * is not something to chase directly.
+ *
+ * OVERFLOW_CHECK puts canaries either side of every pool element and every
+ * heap block; at 2 it checks ALL of them on every alloc and free, which is
+ * slow and is what makes it catch the write close to where it happened rather
+ * than much later. SANITY_CHECK verifies the free lists are not looped or
+ * cross-linked. */
+#ifdef CH32H4_LWIP_ASSERT_CONSOLE
+#define MEMP_OVERFLOW_CHECK         2
+#define MEMP_SANITY_CHECK           1
+#define MEM_OVERFLOW_CHECK          2
+#define MEM_SANITY_CHECK            1
+#endif
